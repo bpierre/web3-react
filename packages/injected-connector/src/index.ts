@@ -2,7 +2,7 @@ import { AbstractConnectorArguments, ConnectorUpdate } from '@web3-react/types'
 import { AbstractConnector } from '@web3-react/abstract-connector'
 import warning from 'tiny-warning'
 
-import { SendReturnResult, SendReturn, Send, SendOld } from './types'
+import { SendReturnResult, SendReturn, Send, SendOld, SendAsyncDeprecated } from './types'
 
 function parseSendReturn(sendReturn: SendReturnResult | SendReturn): any {
   return sendReturn.hasOwnProperty('result') ? sendReturn.result : sendReturn
@@ -124,14 +124,34 @@ export class InjectedConnector extends AbstractConnector {
       try {
         chainId = await (window.ethereum.send as Send)('net_version').then(parseSendReturn)
       } catch {
-        warning(false, 'net_version was unsuccessful, falling back to net version v2')
+        warning(false, 'net_version was unsuccessful, falling back to net_version through sendAsync()')
+      }
+    }
+
+    if (!chainId) {
+      try {
+        chainId = await new Promise((resolve, reject) => {
+          const sendAsync = window?.ethereum?.sendAsync as SendAsyncDeprecated
+          if (!sendAsync) {
+            reject()
+          }
+          sendAsync({ method: 'net_version' }, (err, response) => {
+            if (err) {
+              reject(err)
+            } else {
+              resolve(response)
+            }
+          })
+        }).then(parseSendReturn)
+      } catch (err) {
+        warning(false, 'net_version through sendAsync() was unsuccessful, falling back to net version v2')
       }
     }
 
     if (!chainId) {
       try {
         chainId = parseSendReturn((window.ethereum.send as SendOld)({ method: 'net_version' }))
-      } catch {
+      } catch (err) {
         warning(false, 'net_version v2 was unsuccessful, falling back to manual matches and static properties')
       }
     }
